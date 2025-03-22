@@ -5,6 +5,9 @@ export const CONFIG = {
     RENDER_DISTANCE: 3,       // Number of chunks to render in each direction
     MAX_HEIGHT: 100,          // Maximum terrain height
     SEED: 12345,              // Seed for random generation
+    TERRAIN_OCTAVES: 4,       // Number of noise octaves for terrain
+    TERRAIN_PERSISTENCE: 0.5, // How much each octave contributes
+    TERRAIN_SCALE: 0.01,      // Base scale of terrain features
   },
   
   // Katamari settings
@@ -17,6 +20,8 @@ export const CONFIG = {
     CAMERA_HEIGHT: 5,         // Height of camera above katamari
     JUMP_FORCE: 10,           // Force applied when jumping
     GRAVITY: 20,              // Gravity strength
+    ROLL_MOMENTUM: 0.98,      // Momentum retention when rolling
+    TURN_SPEED: 0.8,          // How quickly the katamari turns
   },
   
   // Object settings
@@ -48,6 +53,7 @@ export const CONFIG = {
     USE_INSTANCING: true,     // Use instanced meshes for similar objects
     LOD_DISTANCES: [50, 100, 200], // Distances for level of detail changes
     CULLING_DISTANCE: 300,    // Distance at which to cull objects
+    FRUSTUM_CULLING: true,    // Enable frustum culling for improved performance
+    ADAPTIVE_LOD: true,       // Adapt LOD based on frame rate
   }
 };
-

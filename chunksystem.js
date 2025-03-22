@@ -53,7 +53,8 @@ export class ChunkSystem {
   
   // Create a basic ground plane
   setupGround() {
-    const groundGeometry = new THREE.PlaneGeometry(2000, 2000, 50, 50);
+    // Create a higher resolution ground for better appearance
+    const groundGeometry = new THREE.PlaneGeometry(2000, 2000, 100, 100);
     groundGeometry.rotateX(-Math.PI / 2);
     
     // Apply height displacement to vertices based on noise
@@ -61,23 +62,68 @@ export class ChunkSystem {
     for (let i = 0; i < vertices.count; i++) {
       const x = vertices.getX(i);
       const z = vertices.getZ(i);
-      const height = this.getHeightAt(x, z) * 0.5; // Smoother ground
+      const height = this.getHeightAt(x, z);
       vertices.setY(i, height);
     }
     
     groundGeometry.computeVertexNormals();
     
-    // Ground material with simple terrain texture
+    // Create detailed ground texture
+    const groundTexture = this.createTerrainTexture();
+    groundTexture.wrapS = THREE.RepeatWrapping;
+    groundTexture.wrapT = THREE.RepeatWrapping;
+    groundTexture.repeat.set(50, 50);
+    
+    // Ground material with normal mapping for better detail
     const groundMaterial = new THREE.MeshStandardMaterial({
-      color: 0x3a7335,
+      map: groundTexture,
       roughness: 0.9,
       metalness: 0.0,
+      vertexColors: false
     });
     
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.receiveShadow = true;
     ground.name = "ground";
     this.scene.add(ground);
+    
+    // Add LOD support for ground
+    if (CONFIG.PERFORMANCE.ADAPTIVE_LOD) {
+      this.setupGroundLOD(ground);
+    }
+  }
+  
+  // Create a procedural terrain texture
+  createTerrainTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    
+    // Base green color
+    ctx.fillStyle = '#3a7335';
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // Add noise patterns for detail
+    for (let y = 0; y < 512; y += 4) {
+      for (let x = 0; x < 512; x += 4) {
+        const noise = Math.random();
+        const color = noise > 0.6 ? '#2d5d29' : 
+                     noise > 0.3 ? '#458339' : 
+                     '#3a7335';
+        
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, 4, 4);
+      }
+    }
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    return texture;
+  }
+  
+  // Setup LOD for ground
+  setupGroundLOD(ground) {
+    // We'll implement this later if needed
   }
   
   // Get height at a specific world coordinate
@@ -85,15 +131,38 @@ export class ChunkSystem {
     if (!simplex) return 0;
     
     // Use multiple octaves of noise for more natural terrain
-    const scale1 = 0.01;
-    const scale2 = 0.05;
-    const scale3 = 0.2;
+    let amplitude = 1.0;
+    let frequency = CONFIG.WORLD.TERRAIN_SCALE;
+    let maxHeight = 0;
+    let height = 0;
     
-    const y1 = simplex.noise2D(x * scale1, z * scale1) * 0.5 + 0.5;
-    const y2 = simplex.noise2D(x * scale2, z * scale2) * 0.25 + 0.25;
-    const y3 = simplex.noise2D(x * scale3, z * scale3) * 0.125 + 0.125;
+    // Apply multiple octaves for more natural, detailed terrain
+    for (let i = 0; i < CONFIG.WORLD.TERRAIN_OCTAVES; i++) {
+      // Get noise value between -1 and 1
+      const noiseValue = simplex.noise2D(x * frequency, z * frequency);
+      
+      // Add weighted noise to height
+      height += noiseValue * amplitude;
+      
+      // Track total possible height for normalization
+      maxHeight += amplitude;
+      
+      // Next octave has higher frequency but lower amplitude
+      amplitude *= CONFIG.WORLD.TERRAIN_PERSISTENCE;
+      frequency *= 2;
+    }
     
-    return (y1 + y2 + y3) * CONFIG.WORLD.MAX_HEIGHT;
+    // Normalize and scale to MAX_HEIGHT
+    height = (height / maxHeight) * 0.5 + 0.5;
+    
+    // Apply some terrain features
+    const mountainNoise = Math.pow(simplex.noise2D(x * 0.003, z * 0.003) * 0.5 + 0.5, 2);
+    const flatteningFactor = Math.pow(simplex.noise2D(x * 0.002, z * 0.002) * 0.5 + 0.5, 3);
+    
+    // Blend between flat areas and mountains
+    height = height * (1 - flatteningFactor) + mountainNoise * flatteningFactor;
+    
+    return height * CONFIG.WORLD.MAX_HEIGHT;
   }
   
   // Called when websocket connection is established
@@ -184,37 +253,87 @@ export class ChunkSystem {
     
     // Use seeded random based on chunk position for consistent generation
     const chunkSeed = x * 73856093 ^ y * 19349663 ^ z * 83492791;
+    let seed = chunkSeed;
     const seededRandom = function() {
-      let seed = chunkSeed;
-      return function() {
-        seed = (seed * 9301 + 49297) % 233280;
-        return seed / 233280;
-      };
-    }();
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    
+    // Determine terrain characteristics in this chunk
+    const chunkCenterX = x * chunkSize + chunkSize / 2;
+    const chunkCenterZ = z * chunkSize + chunkSize / 2;
+    const avgHeight = this.getHeightAt(chunkCenterX, chunkCenterZ);
+    const heightSamples = [];
+    
+    // Sample heights for object placement
+    const sampleCount = 16;
+    for (let sx = 0; sx < sampleCount; sx++) {
+      for (let sz = 0; sz < sampleCount; sz++) {
+        const sampleX = x * chunkSize + (sx / sampleCount) * chunkSize;
+        const sampleZ = z * chunkSize + (sz / sampleCount) * chunkSize;
+        heightSamples.push({
+          x: sampleX,
+          z: sampleZ,
+          height: this.getHeightAt(sampleX, sampleZ)
+        });
+      }
+    }
+    
+    // Sort samples by height to place objects more appropriately
+    heightSamples.sort((a, b) => a.height - b.height);
+    
+    // Determine environmental zone based on average height
+    const isWater = avgHeight < 15;
+    const isPlain = avgHeight >= 15 && avgHeight < 30;
+    const isHills = avgHeight >= 30 && avgHeight < 60;
+    const isMountain = avgHeight >= 60;
+    
+    // Adjust object density and types based on terrain
+    let objectDensity = CONFIG.OBJECTS.DENSITY;
+    if (isWater) objectDensity *= 0.3;
+    if (isPlain) objectDensity *= 1.2;
+    if (isHills) objectDensity *= 0.8;
+    if (isMountain) objectDensity *= 0.5;
     
     // Determine number of objects to create in this chunk
-    const baseObjectCount = Math.floor(seededRandom() * 15) + 5;
+    const baseObjectCount = Math.floor(seededRandom() * 15 * objectDensity) + 5;
     const objectCount = Math.min(30, baseObjectCount);
     
-    // Generate objects for the chunk
+    // Generate objects for the chunk with smart placement
     for (let i = 0; i < objectCount; i++) {
-      // Random position within chunk
-      const posX = x * chunkSize + seededRandom() * chunkSize;
-      const posZ = z * chunkSize + seededRandom() * chunkSize;
+      // Select a height sample biased by object type
+      const sampleIndex = Math.floor(Math.pow(seededRandom(), 2) * heightSamples.length);
+      const sample = heightSamples[sampleIndex];
+      
+      // Add some randomness to the exact position
+      const posX = sample.x + (seededRandom() - 0.5) * (chunkSize / 8);
+      const posZ = sample.z + (seededRandom() - 0.5) * (chunkSize / 8);
       const posY = this.getHeightAt(posX, posZ);
       
       // Determine object size tier
       const tierRandom = seededRandom();
       let tierIndex = 0;
       
-      // Weighted size distribution - more small objects, fewer large ones
-      if (tierRandom > 0.98) tierIndex = 6;      // Huge (0.5%)
-      else if (tierRandom > 0.95) tierIndex = 5; // XXL (3%)
-      else if (tierRandom > 0.90) tierIndex = 4; // XL (5%)
-      else if (tierRandom > 0.80) tierIndex = 3; // Large (10%)
-      else if (tierRandom > 0.65) tierIndex = 2; // Medium (15%)
-      else if (tierRandom > 0.35) tierIndex = 1; // Small (30%)
-      else tierIndex = 0;                        // Tiny (35%)
+      // Terrain-dependent size distribution
+      let tierDistribution;
+      
+      if (isWater) {
+        tierDistribution = [0.7, 0.9, 0.97, 0.99, 0.995, 1.0]; // Mostly small objects in water
+      } else if (isPlain) {
+        tierDistribution = [0.4, 0.7, 0.85, 0.95, 0.98, 1.0]; // Mix of sizes on plains
+      } else if (isHills) {
+        tierDistribution = [0.3, 0.5, 0.75, 0.9, 0.98, 1.0]; // More medium/large in hills
+      } else { // Mountains
+        tierDistribution = [0.2, 0.4, 0.6, 0.85, 0.95, 1.0]; // Larger objects on mountains
+      }
+      
+      // Select tier based on distribution
+      for (let t = 0; t < tierDistribution.length; t++) {
+        if (tierRandom <= tierDistribution[t]) {
+          tierIndex = t;
+          break;
+        }
+      }
       
       const tier = CONFIG.OBJECTS.SIZE_TIERS[tierIndex];
       const minSize = tierIndex > 0 ? CONFIG.OBJECTS.SIZE_TIERS[tierIndex-1].max : CONFIG.OBJECTS.MIN_SIZE;
@@ -223,31 +342,88 @@ export class ChunkSystem {
       // Random scale within the tier's range
       const scale = minSize + seededRandom() * (maxSize - minSize);
       
-      // Random rotation
-      const rotation = {
-        x: seededRandom() * Math.PI * 2,
-        y: seededRandom() * Math.PI * 2,
-        z: seededRandom() * Math.PI * 2
-      };
+      // Align rotation with terrain slope for larger objects
+      let rotationX = 0, rotationZ = 0;
       
-      // Determine object type based on size
-      let type;
-      if (tierIndex <= 1) {
-        type = ['paperclip', 'coin', 'pencil', 'eraser', 'thumbtack', 'candy'][Math.floor(seededRandom() * 6)];
-      } else if (tierIndex <= 2) {
-        type = ['book', 'cup', 'plate', 'phone', 'toy', 'plant'][Math.floor(seededRandom() * 6)];
-      } else if (tierIndex <= 3) {
-        type = ['chair', 'lamp', 'box', 'trashcan', 'stool', 'endtable'][Math.floor(seededRandom() * 6)];
-      } else if (tierIndex <= 4) {
-        type = ['desk', 'table', 'bicycle', 'mailbox', 'bench', 'doghouse'][Math.floor(seededRandom() * 6)];
-      } else if (tierIndex <= 5) {
-        type = ['car', 'tree', 'streetlight', 'shed', 'statue', 'fountain'][Math.floor(seededRandom() * 6)];
-      } else {
-        type = ['house', 'building', 'skyscraper'][Math.floor(seededRandom() * 3)];
+      if (tierIndex >= 3) { // For larger objects, align to terrain
+        // Sample nearby points to determine slope
+        const d = 1.0;
+        const heightN = this.getHeightAt(posX, posZ - d);
+        const heightS = this.getHeightAt(posX, posZ + d);
+        const heightE = this.getHeightAt(posX + d, posZ);
+        const heightW = this.getHeightAt(posX - d, posZ);
+        
+        // Calculate rotation to match terrain slope
+        rotationX = Math.atan2(heightS - heightN, 2 * d);
+        rotationZ = Math.atan2(heightW - heightE, 2 * d);
+        
+        // Limit extreme rotations
+        rotationX = Math.max(Math.min(rotationX, Math.PI/8), -Math.PI/8);
+        rotationZ = Math.max(Math.min(rotationZ, Math.PI/8), -Math.PI/8);
       }
+      
+      // Random Y rotation
+      const rotationY = seededRandom() * Math.PI * 2;
+      
+      // Determine object type based on tier and terrain
+      let typePool;
+      if (tierIndex <= 1) { // Tiny/small objects
+        if (isWater) {
+          typePool = ['paperclip', 'coin', 'eraser', 'candy'];
+        } else {
+          typePool = ['paperclip', 'coin', 'pencil', 'eraser', 'thumbtack', 'candy'];
+        }
+      } else if (tierIndex <= 2) { // Medium objects
+        if (isWater) {
+          typePool = ['cup', 'plate', 'toy'];
+        } else {
+          typePool = ['book', 'cup', 'plate', 'phone', 'toy', 'plant'];
+        }
+      } else if (tierIndex <= 3) { // Large objects
+        if (isWater) {
+          typePool = ['box', 'trashcan'];
+        } else if (isMountain) {
+          typePool = ['chair', 'box', 'stool'];
+        } else {
+          typePool = ['chair', 'lamp', 'box', 'trashcan', 'stool', 'endtable'];
+        }
+      } else if (tierIndex <= 4) { // XL objects
+        if (isWater) {
+          typePool = ['mailbox'];
+        } else if (isMountain) {
+          typePool = ['bench', 'doghouse'];
+        } else {
+          typePool = ['desk', 'table', 'bicycle', 'mailbox', 'bench', 'doghouse'];
+        }
+      } else if (tierIndex <= 5) { // XXL objects
+        if (isWater) {
+          typePool = [];
+        } else if (isMountain) {
+          typePool = ['statue'];
+        } else if (isPlain) {
+          typePool = ['car', 'tree', 'streetlight', 'shed', 'statue', 'fountain'];
+        } else {
+          typePool = ['tree', 'statue'];
+        }
+      } else { // Huge objects
+        if (isWater || isMountain) {
+          typePool = [];
+        } else if (isPlain) {
+          typePool = ['house', 'building', 'skyscraper'];
+        } else {
+          typePool = ['house'];
+        }
+      }
+      
+      // Skip if no suitable types for this location
+      if (typePool.length === 0) continue;
+      
+      // Select random type from the pool
+      const type = typePool[Math.floor(seededRandom() * typePool.length)];
       
       // Create the object
       const position = new THREE.Vector3(posX, posY + scale * 0.5, posZ);
+      const rotation = { x: rotationX, y: rotationY, z: rotationZ };
       const object = createObject(type, position, scale, rotation);
       
       if (object) {
@@ -270,6 +446,11 @@ export class ChunkSystem {
       }
     }
     
+    // Add instancing for similar objects if enabled
+    if (CONFIG.PERFORMANCE.USE_INSTANCING) {
+      this.applyInstancing(chunk);
+    }
+    
     // Store the chunk and add it to the scene
     this.chunks.set(key, chunk);
     this.scene.add(chunk.group);
@@ -279,6 +460,75 @@ export class ChunkSystem {
     this.saveChunk(chunk);
     
     return chunk;
+  }
+
+  // Apply instanced rendering for similar objects
+  applyInstancing(chunk) {
+    // Group objects by type for instancing
+    const instanceGroups = {};
+    
+    // First pass: categorize objects
+    chunk.objects.forEach(obj => {
+      if (!obj.data.collected) {
+        const key = `${obj.data.type}_${Math.floor(obj.data.scale * 10)}`;
+        if (!instanceGroups[key]) {
+          instanceGroups[key] = {
+            type: obj.data.type,
+            baseScale: obj.data.scale,
+            objects: []
+          };
+        }
+        instanceGroups[key].objects.push(obj);
+      }
+    });
+    
+    // Only apply instancing to groups with multiple objects
+    for (const key in instanceGroups) {
+      const group = instanceGroups[key];
+      if (group.objects.length <= 2) continue; // Skip small groups
+      
+      // Use the first object as template
+      const template = group.objects[0].mesh;
+      
+      // Extract geometry
+      const geometry = template.geometry.clone();
+      
+      // Create instanced mesh
+      const instancedMesh = new THREE.InstancedMesh(
+        geometry,
+        template.material,
+        group.objects.length
+      );
+      
+      // Set transforms for each instance
+      const matrix = new THREE.Matrix4();
+      group.objects.forEach((obj, i) => {
+        const mesh = obj.mesh;
+        matrix.compose(
+          mesh.position,
+          mesh.quaternion,
+          mesh.scale
+        );
+        instancedMesh.setMatrixAt(i, matrix);
+        
+        // Update object reference to use the instanced mesh
+        obj.instanced = true;
+        obj.instanceIndex = i;
+      });
+      
+      // Add instanced mesh to chunk and remove individual meshes
+      chunk.group.add(instancedMesh);
+      group.objects.forEach(obj => {
+        chunk.group.remove(obj.mesh);
+      });
+      
+      // Store the instanced mesh in the chunk
+      if (!chunk.instancedMeshes) chunk.instancedMeshes = [];
+      chunk.instancedMeshes.push({
+        mesh: instancedMesh,
+        objects: group.objects
+      });
+    }
   }
   
   // Get or create chunk at specified coordinates
@@ -374,8 +624,32 @@ export class ChunkSystem {
     const centerY = 0; // We're using a single layer of chunks for now
     const centerZ = Math.floor(position.z / chunkSize);
     
-    // Process load queue
+    // Use frustum culling if enabled
+    let frustum;
+    if (CONFIG.PERFORMANCE.FRUSTUM_CULLING) {
+      const camera = this.katamari.camera;
+      frustum = new THREE.Frustum();
+      frustum.setFromProjectionMatrix(
+        new THREE.Matrix4().multiplyMatrices(
+          camera.projectionMatrix,
+          camera.matrixWorldInverse
+        )
+      );
+    }
+    
+    // Process load queue - prioritize nearby chunks
     if (this.loadQueue.length > 0) {
+      // Sort load queue by distance to player
+      this.loadQueue.sort((a, b) => {
+        const [ax, ay, az] = a.split(',').map(Number);
+        const [bx, by, bz] = b.split(',').map(Number);
+        
+        const distA = Math.sqrt(Math.pow(ax - centerX, 2) + Math.pow(az - centerZ, 2));
+        const distB = Math.sqrt(Math.pow(bx - centerX, 2) + Math.pow(bz - centerZ, 2));
+        
+        return distA - distB;
+      });
+      
       const key = this.loadQueue.shift();
       const [x, y, z] = key.split(',').map(Number);
       
@@ -384,7 +658,7 @@ export class ChunkSystem {
         .filter({ x, y, z })
         .getList();
       
-      if (chunks.length > 0) {
+      if (chunks && chunks.length > 0) {
         this.loadChunkFromData(chunks[0]);
       } else {
         this.generateChunk(x, y, z);
@@ -406,6 +680,49 @@ export class ChunkSystem {
         if (!this.chunks.has(key) && !this.loadQueue.includes(key)) {
           this.loadQueue.push(key);
         }
+      }
+    }
+    
+    // Apply frustum culling to chunk objects if enabled
+    if (CONFIG.PERFORMANCE.FRUSTUM_CULLING && frustum) {
+      for (const chunk of this.chunks.values()) {
+        // First check if the whole chunk is visible
+        const chunkCenterX = chunk.x * chunkSize + chunkSize / 2;
+        const chunkCenterZ = chunk.z * chunkSize + chunkSize / 2;
+        const chunkCenterY = this.getHeightAt(chunkCenterX, chunkCenterZ);
+        
+        const chunkSphere = new THREE.Sphere(
+          new THREE.Vector3(chunkCenterX, chunkCenterY, chunkCenterZ),
+          chunkSize * Math.SQRT2 / 2
+        );
+        
+        // Skip detailed culling if whole chunk is outside frustum
+        if (!frustum.intersectsSphere(chunkSphere)) {
+          chunk.group.visible = false;
+          continue;
+        }
+        
+        // Show the chunk
+        chunk.group.visible = true;
+        
+        // Detailed culling for large objects
+        chunk.objects.forEach(obj => {
+          if (obj.instanced) return; // Skip instanced objects
+          if (obj.collected) return; // Skip collected objects
+          
+          const mesh = obj.mesh;
+          if (!mesh) return;
+          
+          // For larger objects, do detailed culling
+          if (obj.data.scale > 5) {
+            const objectSphere = new THREE.Sphere(
+              mesh.position.clone(),
+              obj.data.scale * 1.5
+            );
+            
+            mesh.visible = frustum.intersectsSphere(objectSphere);
+          }
+        });
       }
     }
     

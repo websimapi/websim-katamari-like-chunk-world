@@ -103,11 +103,22 @@ export class Katamari {
     // Update position
     this.object.position.copy(this.position);
     
-    // Rotate based on movement
+    // Apply rolling effects based on velocity
     if (this.velocity.length() > 0.1) {
-      const movementAxis = new THREE.Vector3(-this.velocity.z, 0, this.velocity.x).normalize();
-      const angle = this.velocity.length() * 0.1;
-      this.object.rotateOnAxis(movementAxis, angle);
+      // Create rotation axis perpendicular to movement direction
+      const movementDirection = new THREE.Vector3(this.velocity.x, 0, this.velocity.z).normalize();
+      const rotationAxis = new THREE.Vector3(-movementDirection.z, 0, movementDirection.x);
+      
+      // Calculate rotation amount based on distance traveled and size
+      const rotationSpeed = this.velocity.length() / this.size;
+      this.object.rotateOnAxis(rotationAxis, rotationSpeed);
+      
+      // Add roll wobble for more dynamic feel
+      if (this.size < 5.0) { // Only for smaller katamaris
+        const wobbleAmount = Math.min(0.05, 0.1 / this.size) * Math.sin(Date.now() / 200);
+        this.object.rotation.z += wobbleAmount * Math.abs(this.velocity.x);
+        this.object.rotation.x += wobbleAmount * Math.abs(this.velocity.z);
+      }
     }
     
     // Update camera position and target
@@ -115,6 +126,28 @@ export class Katamari {
     
     // Update UI
     this.updateUI();
+    
+    // Update attached objects
+    this.updateAttachedObjects();
+  }
+  
+  updateAttachedObjects() {
+    // If we have collected objects, update their positions
+    for (let i = 0; i < this.collectedObjects.length; i++) {
+      const obj = this.collectedObjects[i];
+      if (!obj.mesh) continue;
+      
+      // Make the object follow the katamari's position and rotation
+      obj.mesh.position.copy(this.position);
+      obj.mesh.rotation.copy(this.object.rotation);
+      
+      // Apply offset from center based on object's attachment point
+      if (obj.attachPoint) {
+        const offsetVector = obj.attachPoint.clone();
+        offsetVector.applyQuaternion(this.object.quaternion);
+        obj.mesh.position.add(offsetVector);
+      }
+    }
   }
   
   updateCamera() {

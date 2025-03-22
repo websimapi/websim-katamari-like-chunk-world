@@ -5,6 +5,9 @@ import { CONFIG } from './config.js';
 const geometryCache = {};
 const materialCache = {};
 
+// Object instance pools for better performance
+const instancedMeshes = new Map();
+
 // Create object of specified type at position with scale
 export function createObject(type, position, scale, rotation) {
   // Choose the appropriate creation method based on type
@@ -173,6 +176,12 @@ function getMaterial(key, params) {
     materialCache[key] = new THREE.MeshStandardMaterial(params);
   }
   return materialCache[key];
+}
+
+// Create a lower detail version of geometry for LOD
+function createSimplifiedGeometry(geometry, detail) {
+  // For now, just return the original - we can improve later
+  return geometry;
 }
 
 // Generic object for fallback
@@ -466,7 +475,7 @@ function createToy(scale) {
 
     const wheelGeometry = getGeometry('toyCarWheel', () => new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16));
 
-    const wheelMaterial = getMaterial('toyCarWheel', { color: 0x111111, roughness: 0.8 });
+    const wheelMaterial = getMaterial('toyCarWheel', { color: 0x111111, roughness: 0.7 });
 
     const frontLeftWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
     frontLeftWheel.position.set(-0.35, 0.15, 0.3);

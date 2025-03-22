@@ -137,6 +137,8 @@ function checkCollisions() {
   });
 }
 
+let cameraTargetPosition = new THREE.Vector3(0, 0, 0);
+
 // Main update loop
 function update() {
   // Calculate move direction based on camera orientation
@@ -163,15 +165,50 @@ function update() {
   // Apply camera rotation to movement direction
   moveDirection.applyQuaternion(camera.quaternion);
   moveDirection.y = 0; // Keep movement in horizontal plane
+  moveDirection.normalize();
+  
+  // Calculate momentum-based velocity
+  const currentSpeed = new THREE.Vector3(katamari.velocity.x, 0, katamari.velocity.z).length();
+  const targetSpeed = moveDirection.length() > 0 ? 
+                    CONFIG.KATAMARI.ROLL_SPEED * (1.0 / Math.sqrt(katamari.size)) : 0;
+  
+  // Smooth acceleration and deceleration
+  let newSpeed;
+  if (moveDirection.length() > 0) {
+    // Accelerate
+    newSpeed = currentSpeed + (targetSpeed - currentSpeed) * 0.1;
+    
+    // Blend current direction with input direction for smoother turning
+    const currentDir = new THREE.Vector3(katamari.velocity.x, 0, katamari.velocity.z).normalize();
+    const turnSpeed = CONFIG.KATAMARI.TURN_SPEED * (1.0 / Math.sqrt(katamari.size));
+    
+    if (currentDir.length() > 0) {
+      moveDirection.lerp(currentDir, 1 - turnSpeed);
+      moveDirection.normalize();
+    }
+  } else {
+    // Decelerate with friction
+    newSpeed = currentSpeed * CONFIG.KATAMARI.ROLL_MOMENTUM;
+  }
   
   // Apply movement to katamari
-  const moveSpeed = CONFIG.KATAMARI.ROLL_SPEED * (1.0 / Math.sqrt(katamari.size)); // Bigger katamari moves slower
-  
-  katamari.velocity.x = moveDirection.x * moveSpeed;
-  katamari.velocity.z = moveDirection.z * moveSpeed;
+  if (moveDirection.length() > 0) {
+    katamari.velocity.x = moveDirection.x * newSpeed;
+    katamari.velocity.z = moveDirection.z * newSpeed;
+  } else if (katamari.velocity.length() > 0.01) {
+    // Maintain direction when decelerating
+    const currentDir = new THREE.Vector3(katamari.velocity.x, 0, katamari.velocity.z).normalize();
+    katamari.velocity.x = currentDir.x * newSpeed;
+    katamari.velocity.z = currentDir.z * newSpeed;
+  } else {
+    // Stop completely if very slow
+    katamari.velocity.x = 0;
+    katamari.velocity.z = 0;
+  }
   
   // Apply jumping
   if (jump && katamari.isGrounded) {
+    // Jump force reduced with size 
     katamari.velocity.y = CONFIG.KATAMARI.JUMP_FORCE * (1.0 / Math.sqrt(katamari.size));
     katamari.isGrounded = false;
   }
@@ -186,11 +223,31 @@ function update() {
   katamari.position.y += katamari.velocity.y;
   katamari.position.z += katamari.velocity.z;
   
-  // Simple ground collision
+  // Improved ground collision with slope handling
   const groundHeight = chunkSystem.getHeightAt(katamari.position.x, katamari.position.z);
+  
   if (katamari.position.y - katamari.size <= groundHeight) {
+    // Set position at correct height
     katamari.position.y = groundHeight + katamari.size;
-    katamari.velocity.y = 0;
+    
+    // Only zero vertical velocity if falling
+    if (katamari.velocity.y < 0) {
+      katamari.velocity.y = 0;
+    }
+    
+    // Handle slopes - calculate the normal of the terrain
+    const slopeX = chunkSystem.getHeightAt(katamari.position.x + 1, katamari.position.z) - 
+                  chunkSystem.getHeightAt(katamari.position.x - 1, katamari.position.z);
+    const slopeZ = chunkSystem.getHeightAt(katamari.position.x, katamari.position.z + 1) - 
+                  chunkSystem.getHeightAt(katamari.position.x, katamari.position.z - 1);
+    
+    // Apply slope forces - roll downhill
+    if (Math.abs(slopeX) > 0.1 || Math.abs(slopeZ) > 0.1) {
+      const slopeForce = 0.002 * katamari.size;
+      katamari.velocity.x += slopeX * slopeForce;
+      katamari.velocity.z += slopeZ * slopeForce;
+    }
+    
     katamari.isGrounded = true;
   }
   
@@ -206,6 +263,9 @@ function update() {
   // Update katamari and chunk system
   katamari.update();
   chunkSystem.update();
+  
+  // Track camera target position for smoother following
+  cameraTargetPosition.lerp(katamari.position, 0.1);
 }
 
 // Animation loop

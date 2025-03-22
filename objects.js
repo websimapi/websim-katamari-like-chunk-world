@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'https://unpkg.com/three@0.149.0/build/three.module.js';
 import { CONFIG } from './config.js';
 
 // Object cache for geometry reuse
@@ -2769,7 +2769,7 @@ function createHouse(scale) {
     const featureGeometry = new THREE.SphereGeometry(0.5, 16, 16);
     const featureMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xC0C0C0, 
-      metalness: 0.8, 
+      metalness: 0.8,
       roughness: 0.2 
     });
     
@@ -3260,22 +3260,31 @@ function createSkyscraper(scale) {
     } else {
       // Tapered
       const bodyGeometry = getGeometry('taperedSkyscraper', () => {
-        const shape = new THREE.Shape();
-        shape.moveTo(-7, -7);
-        shape.lineTo(7, -7);
-        shape.lineTo(7, 7);
-        shape.lineTo(-7, 7);
-        shape.lineTo(-7, -7);
+        const baseGeometry = new THREE.BoxGeometry(10, 1, 10, 10, 1, 10);
         
-        const extrudeSettings = {
-          steps: 20,
-          depth: 14,
-          bevelEnabled: false
-        };
+        // Create multiple sections with progressive twist
+        const sections = height * 3;
+        const meshes = [];
         
-        const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        geo.scale(1, height * 3.0 / 14, 1);
-        return geo;
+        for (let i = 0; i < sections; i++) {
+          const sectionGeometry = baseGeometry.clone();
+          
+          // Apply twist transformation to vertices
+          const angle = (i / sections) * Math.PI * 0.5; // 90-degree total twist
+          const matrix = new THREE.Matrix4().makeRotationY(angle);
+          
+          sectionGeometry.applyMatrix4(matrix);
+          sectionGeometry.translate(0, i, 0);
+          
+          meshes.push(new THREE.Mesh(sectionGeometry));
+        }
+        
+        // Combine all geometries
+        const combinedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(
+          meshes.map(mesh => mesh.geometry)
+        );
+        
+        return combinedGeometry;
       });
       
       mainBody = new THREE.Mesh(bodyGeometry, new THREE.MeshStandardMaterial({ 
@@ -3839,5 +3848,3 @@ function createHelipadTexture() {
   const texture = new THREE.CanvasTexture(canvas);
   return texture;
 }
-
-

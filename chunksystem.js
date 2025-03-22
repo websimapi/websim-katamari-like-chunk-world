@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { createObject } from './objects.js';
-import * as THREE from 'three';
+import * as THREE from 'https://unpkg.com/three@0.149.0/build/three.module.js';
 
 // Simplex noise for terrain and object generation
 let simplex;
@@ -427,4 +427,3 @@ export class ChunkSystem {
     }
   }
 }
-

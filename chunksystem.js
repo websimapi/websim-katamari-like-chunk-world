@@ -184,21 +184,27 @@ export class ChunkSystem {
     
     // Use seeded random based on chunk position for consistent generation
     const chunkSeed = x * 73856093 ^ y * 19349663 ^ z * 83492791;
-    const random = new Math.seedrandom(chunkSeed.toString());
+    const seededRandom = function() {
+      let seed = chunkSeed;
+      return function() {
+        seed = (seed * 9301 + 49297) % 233280;
+        return seed / 233280;
+      };
+    }();
     
     // Determine number of objects to create in this chunk
-    const baseObjectCount = Math.floor(random() * 15) + 5;
+    const baseObjectCount = Math.floor(seededRandom() * 15) + 5;
     const objectCount = Math.min(30, baseObjectCount);
     
     // Generate objects for the chunk
     for (let i = 0; i < objectCount; i++) {
       // Random position within chunk
-      const posX = x * chunkSize + random() * chunkSize;
-      const posZ = z * chunkSize + random() * chunkSize;
+      const posX = x * chunkSize + seededRandom() * chunkSize;
+      const posZ = z * chunkSize + seededRandom() * chunkSize;
       const posY = this.getHeightAt(posX, posZ);
       
       // Determine object size tier
-      const tierRandom = random();
+      const tierRandom = seededRandom();
       let tierIndex = 0;
       
       // Weighted size distribution - more small objects, fewer large ones
@@ -215,29 +221,29 @@ export class ChunkSystem {
       const maxSize = tier.max;
       
       // Random scale within the tier's range
-      const scale = minSize + random() * (maxSize - minSize);
+      const scale = minSize + seededRandom() * (maxSize - minSize);
       
       // Random rotation
       const rotation = {
-        x: random() * Math.PI * 2,
-        y: random() * Math.PI * 2,
-        z: random() * Math.PI * 2
+        x: seededRandom() * Math.PI * 2,
+        y: seededRandom() * Math.PI * 2,
+        z: seededRandom() * Math.PI * 2
       };
       
       // Determine object type based on size
       let type;
       if (tierIndex <= 1) {
-        type = ['paperclip', 'coin', 'pencil', 'eraser', 'thumbtack', 'candy'][Math.floor(random() * 6)];
+        type = ['paperclip', 'coin', 'pencil', 'eraser', 'thumbtack', 'candy'][Math.floor(seededRandom() * 6)];
       } else if (tierIndex <= 2) {
-        type = ['book', 'cup', 'plate', 'phone', 'toy', 'plant'][Math.floor(random() * 6)];
+        type = ['book', 'cup', 'plate', 'phone', 'toy', 'plant'][Math.floor(seededRandom() * 6)];
       } else if (tierIndex <= 3) {
-        type = ['chair', 'lamp', 'box', 'trashcan', 'stool', 'endtable'][Math.floor(random() * 6)];
+        type = ['chair', 'lamp', 'box', 'trashcan', 'stool', 'endtable'][Math.floor(seededRandom() * 6)];
       } else if (tierIndex <= 4) {
-        type = ['desk', 'table', 'bicycle', 'mailbox', 'bench', 'doghouse'][Math.floor(random() * 6)];
+        type = ['desk', 'table', 'bicycle', 'mailbox', 'bench', 'doghouse'][Math.floor(seededRandom() * 6)];
       } else if (tierIndex <= 5) {
-        type = ['car', 'tree', 'streetlight', 'shed', 'statue', 'fountain'][Math.floor(random() * 6)];
+        type = ['car', 'tree', 'streetlight', 'shed', 'statue', 'fountain'][Math.floor(seededRandom() * 6)];
       } else {
-        type = ['house', 'building', 'skyscraper'][Math.floor(random() * 3)];
+        type = ['house', 'building', 'skyscraper'][Math.floor(seededRandom() * 3)];
       }
       
       // Create the object

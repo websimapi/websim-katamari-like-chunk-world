@@ -422,11 +422,21 @@ export class ChunkSystem {
       const type = typePool[Math.floor(seededRandom() * typePool.length)];
       
       // Create the object
-      const position = new THREE.Vector3(posX, posY + scale * 0.5, posZ);
+      const position = new THREE.Vector3(posX, posY, posZ);
       const rotation = { x: rotationX, y: rotationY, z: rotationZ };
       const object = createObject(type, position, scale, rotation);
       
       if (object) {
+        // Properly place object on the terrain with precise height
+        const exactHeight = this.getHeightAt(position.x, position.z);
+        position.y = exactHeight + scale * 0.5; // Set position to half the object's height above terrain
+        object.position.copy(position);
+        
+        // Store physics properties
+        object.userData.velocity = new THREE.Vector3(0, 0, 0);
+        object.userData.isGrounded = true;
+        object.userData.scale = scale;
+        
         const objectData = {
           type,
           position: { x: position.x, y: position.y, z: position.z },

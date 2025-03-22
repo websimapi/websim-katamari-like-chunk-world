@@ -46,6 +46,8 @@ export const CONFIG = {
     FRICTION: 0.95,           // Surface friction
     BOUNCE: 0.3,              // Bounciness factor
     SIMULATION_STEP: 1/60,    // Physics simulation step size
+    SLOPE_THRESHOLD: 0.2,     // Minimum slope for objects to roll
+    OBJECT_STABILIZATION: 0.5, // Time to stabilize objects on the ground
   },
   
   // Performance settings

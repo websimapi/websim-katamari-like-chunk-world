@@ -2,6 +2,7 @@ import * as THREE from 'https://unpkg.com/three@0.149.0/build/three.module.js';
 import { CONFIG } from './config.js';
 import { ChunkSystem } from './chunksystem.js';
 import { Katamari } from './katamari.js';
+import { PhysicsSystem } from './physicssystem.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -40,6 +41,9 @@ const katamari = new Katamari(scene, camera);
 
 // Initialize chunk system
 const chunkSystem = new ChunkSystem(scene, katamari);
+
+// Initialize physics system
+const physics = new PhysicsSystem();
 
 // Setup controls
 let moveForward = false;
@@ -139,8 +143,16 @@ function checkCollisions() {
 
 let cameraTargetPosition = new THREE.Vector3(0, 0, 0);
 
+// Global lastTime variable for delta time calculation
+let lastTime = performance.now();
+
 // Main update loop
 function update() {
+  // Calculate delta time for physics simulation
+  const now = performance.now();
+  const deltaTime = Math.min((now - (lastTime || now)) / 1000, 0.1); // Cap at 0.1s to prevent large jumps
+  lastTime = now;
+  
   // Calculate move direction based on camera orientation
   const moveDirection = new THREE.Vector3(0, 0, 0);
   
@@ -259,6 +271,41 @@ function update() {
   
   // Check for collisions with objects
   checkCollisions();
+  
+  // Apply physics to all objects in the scene
+  scene.traverse((object) => {
+    if (object.userData && object.userData.collectable && !object.userData.collected) {
+      // Get height at object position
+      const heightAtPosition = chunkSystem.getHeightAt(object.position.x, object.position.z);
+      
+      // Apply gravity physics to objects
+      physics.applyGravity(object, heightAtPosition, deltaTime);
+      
+      // Apply slope physics for rolling objects
+      if (object.userData.isGrounded) {
+        // Calculate the normal of the terrain
+        const slopeX = chunkSystem.getHeightAt(object.position.x + 1, object.position.z) - 
+                      chunkSystem.getHeightAt(object.position.x - 1, object.position.z);
+        const slopeZ = chunkSystem.getHeightAt(object.position.x, object.position.z + 1) - 
+                      chunkSystem.getHeightAt(object.position.x, object.position.z - 1);
+        
+        // Apply slope forces for round objects
+        if ((Math.abs(slopeX) > 0.2 || Math.abs(slopeZ) > 0.2) && 
+            object.userData.type && 
+            ['ball', 'coin', 'paperclip'].includes(object.userData.type)) {
+          
+          const slopeForce = 0.5 * deltaTime;
+          object.userData.velocity.x += slopeX * slopeForce;
+          object.userData.velocity.z += slopeZ * slopeForce;
+          object.userData.isGrounded = false;
+        }
+      }
+      
+      // Apply velocity
+      object.position.x += object.userData.velocity.x * deltaTime;
+      object.position.z += object.userData.velocity.z * deltaTime;
+    }
+  });
   
   // Update katamari and chunk system
   katamari.update();

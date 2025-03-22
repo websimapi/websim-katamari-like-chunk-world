@@ -141,7 +141,7 @@ export function createObject(type, position, scale, rotation) {
       mesh.rotation.z = rotation.z;
     }
     
-    // Add metadata for collision detection
+    // Add metadata for collision detection and physics
     mesh.userData = {
       type,
       scale,
@@ -151,7 +151,9 @@ export function createObject(type, position, scale, rotation) {
         rotation ? rotation.x : 0,
         rotation ? rotation.y : 0,
         rotation ? rotation.z : 0
-      )
+      ),
+      velocity: new THREE.Vector3(0, 0, 0),
+      isGrounded: true
     };
     
     // Add shadow casting/receiving
@@ -1782,14 +1784,13 @@ function createFountain(scale) {
   }
 
   for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * Math.PI * 2;
-    const radius = 1.5;
+    const angle = i * Math.PI / 4;
 
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
+    const x = Math.cos(angle) * 1.5;
+    const z = Math.sin(angle) * 1.5;
 
     const jet = createWaterJet(x, 0.3, z, 0.6, 0.08);
-    jet.rotation.x = Math.atan2(radius, 0.6);
+    jet.rotation.x = Math.atan2(1.5, 0.6);
     jet.rotation.y = angle + Math.PI;
     group.add(jet);
   }
@@ -2427,11 +2428,11 @@ function createSkyscraper(scale) {
   const doorMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8, roughness: 0.2 });
 
   const leftDoor = new THREE.Mesh(doorGeometry, doorMaterial);
-  leftDoor.position.set(-doorWidth / 2, doorHeight / 2 + 1.0, 8.02);
+  leftDoor.position.set(-entranceWidth/2 + 0.5, entranceHeight / 2 + 1.0, 8.02);
   group.add(leftDoor);
 
   const rightDoor = new THREE.Mesh(doorGeometry, doorMaterial);
-  rightDoor.position.set(doorWidth / 2, doorHeight / 2 + 1.0, 8.02);
+  rightDoor.position.set(entranceWidth/2 - 0.5, entranceHeight / 2 + 1.0, 8.02);
   group.add(rightDoor);
 
   for (let i = 0; i < 4; i++) {

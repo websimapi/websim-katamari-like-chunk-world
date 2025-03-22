@@ -97,11 +97,8 @@ export class Katamari {
     this.scene.add(this.object);
   }
   
-  updateKatamari() {
+  update() {
     if (!this.object) return;
-    
-    // Update size
-    this.object.scale.set(this.size / CONFIG.KATAMARI.START_SIZE, this.size / CONFIG.KATAMARI.START_SIZE, this.size / CONFIG.KATAMARI.START_SIZE);
     
     // Update position
     this.object.position.copy(this.position);
@@ -143,5 +140,15 @@ export class Katamari {
     this.camera.lookAt(this.cameraLookAt);
   }
   
-  update
-
+  updateUI() {
+    // Update size display
+    document.getElementById('katamari-size').textContent = `Katamari Size: ${this.size.toFixed(1)}`;
+    
+    // Update objects collected counter
+    document.getElementById('object-count').textContent = `Objects Collected: ${this.objectsCollected}`;
+  }
+  
+  getPosition() {
+    return this.position;
+  }
+}

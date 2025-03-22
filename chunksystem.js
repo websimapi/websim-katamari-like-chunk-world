@@ -374,20 +374,15 @@ export class ChunkSystem {
       const [x, y, z] = key.split(',').map(Number);
       
       // Try to load from database first
-      this.room.collection('chunk')
+      const chunks = this.room.collection('chunk')
         .filter({ x, y, z })
-        .getList()
-        .then(chunks => {
-          if (chunks.length > 0) {
-            this.loadChunkFromData(chunks[0]);
-          } else {
-            this.generateChunk(x, y, z);
-          }
-        })
-        .catch(error => {
-          console.error('Error loading chunk from database:', error);
-          this.generateChunk(x, y, z);
-        });
+        .getList();
+      
+      if (chunks.length > 0) {
+        this.loadChunkFromData(chunks[0]);
+      } else {
+        this.generateChunk(x, y, z);
+      }
     }
     
     // Process save queue
